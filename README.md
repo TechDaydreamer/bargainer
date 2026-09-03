@@ -7,7 +7,7 @@
 The lowercase `ai` in the `bargainer` wordmark is intentionally highlighted to make the agent-powered workflow visible at a glance.
 
 ## Why it matters
-Clicking through marketplace screens is slow and fragile for agents. Bargainer exposes the complete selling workflow as WebMCP tools: an agent can inspect inventory, reprice, bundle, negotiate, and report analytics. A human still makes the irreversible decision.
+Clicking through marketplace screens is slow and fragile for agents. Bargainer presents a negotiation-centered bento desk: the live agent-to-agent feed is the centerpiece, inventory and the active offer summary sit beside it, and the full-width approval bar appears only when a human decision is required. WebMCP tools let an agent inspect inventory, reprice, bundle, negotiate, and report analytics. A human still makes the irreversible decision.
 
 ## Architecture
 ```text

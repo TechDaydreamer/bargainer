@@ -1,7 +1,7 @@
 # Bargainer demo (<3 minutes)
 
 **0:00–0:15 — Hook**  
-On screen: Bargainer dashboard and live feed. Narrate: “My agent just sold my sneakers while I watched — but it could not close the deal without me.”
+On screen: Bargainer’s bento desk with the live negotiation feed as the centerpiece. Narrate: “My agent just sold my sneakers while I watched — but it could not close the deal without me.”
 
 **0:15–0:35 — Problem**  
 Show inventory and feed. Explain that clicking through marketplace screens is slow and fragile for agents, especially when an offer expires or a buyer changes their mind.
