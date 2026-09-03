@@ -40,51 +40,714 @@ function App() {
   const [toolResult, setToolResult] = useState('');
   const [nowTick, setNowTick] = useState(Date.now());
 
-  useEffect(() => { startBuyerEngine(); return stopBuyerEngine; }, []);
-  useEffect(() => { if (document.modelContext) document.modelContext.getTools().then((items) => setTools(items as any[])).catch(() => undefined); }, [ready]);
-  useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 3200); return () => window.clearTimeout(timer); }, [notice]);
-  useEffect(() => { const close = (event: KeyboardEvent) => event.key === 'Escape' && setInspector(false); window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, []);
-  useEffect(() => { const timer = window.setInterval(() => setNowTick(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    startBuyerEngine();
+    return stopBuyerEngine;
+  }, []);
+  useEffect(() => {
+    if (document.modelContext)
+      document.modelContext
+        .getTools()
+        .then((items) => setTools(items as any[]))
+        .catch(() => undefined);
+  }, [ready]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(''), 3200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === 'Escape' && setInspector(false);
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const categories = useMemo(() => ['All', ...Array.from(new Set(inventory.map((item) => item.category)))], [inventory]);
-  const openOffers = offers.filter((offer) => offer.status === 'open' || offer.status === 'countered');
-  const filteredInventory = useMemo(() => inventory.filter((item) => {
-    const matchesQuery = item.title.toLowerCase().includes(query.toLowerCase()) || item.category.toLowerCase().includes(query.toLowerCase());
-    return matchesQuery && (category === 'All' || item.category === category);
-  }).sort((a, b) => sort === 'price-high' ? b.ask - a.ask : sort === 'price-low' ? a.ask - b.ask : a.status === 'listed' && b.status !== 'listed' ? -1 : 0), [inventory, query, category, sort]);
-  const visibleFeed = useMemo(() => [...feed].reverse().filter((event) => feedFilter === 'all' || event.type === feedFilter), [feed, feedFilter]);
+  const categories = useMemo(
+    () => ['All', ...Array.from(new Set(inventory.map((item) => item.category)))],
+    [inventory],
+  );
+  const openOffers = offers.filter(
+    (offer) => offer.status === 'open' || offer.status === 'countered',
+  );
+  const filteredInventory = useMemo(
+    () =>
+      inventory
+        .filter((item) => {
+          const matchesQuery =
+            item.title.toLowerCase().includes(query.toLowerCase()) ||
+            item.category.toLowerCase().includes(query.toLowerCase());
+          return matchesQuery && (category === 'All' || item.category === category);
+        })
+        .sort((a, b) =>
+          sort === 'price-high'
+            ? b.ask - a.ask
+            : sort === 'price-low'
+              ? a.ask - b.ask
+              : a.status === 'listed' && b.status !== 'listed'
+                ? -1
+                : 0,
+        ),
+    [inventory, query, category, sort],
+  );
+  const visibleFeed = useMemo(
+    () => [...feed].reverse().filter((event) => feedFilter === 'all' || event.type === feedFilter),
+    [feed, feedFilter],
+  );
   const flashOffer = openOffers.find((offer) => offer.persona === 'Flash Frank' && offer.expiresAt);
-  const flashSeconds = flashOffer?.expiresAt ? Math.max(0, Math.ceil((flashOffer.expiresAt - nowTick) / 1000)) : 0;
-  const flashLabel = flashSeconds ? `Flash Frank expires in ${Math.floor(flashSeconds / 60)}:${String(flashSeconds % 60).padStart(2, '0')}` : '';
+  const flashSeconds = flashOffer?.expiresAt
+    ? Math.max(0, Math.ceil((flashOffer.expiresAt - nowTick) / 1000))
+    : 0;
+  const flashLabel = flashSeconds
+    ? `Flash Frank expires in ${Math.floor(flashSeconds / 60)}:${String(flashSeconds % 60).padStart(2, '0')}`
+    : '';
 
   const notify = (message: string) => setNotice(message);
-  const savePrice = (id: string) => { const amount = Number(priceInput); if (!Number.isFinite(amount) || amount <= 0) { notify('Enter a price greater than $0.'); return; } try { setItemPrice(id, amount); setPriceId(undefined); notify('Listing price updated.'); } catch (error) { notify(error instanceof Error ? error.message : 'Could not update price.'); } };
-  const counterOffer = (offer: Offer) => { const amount = Number(counter[offer.id]); if (!Number.isFinite(amount) || amount <= 0) { notify('Enter a valid counter amount.'); return; } try { respond(offer.id, 'counter', amount); notify(`Counter sent to ${offer.persona}.`); } catch (error) { notify(error instanceof Error ? error.message : 'Counter failed.'); } };
-  const acceptOffer = (offer: Offer) => { try { respond(offer.id, 'accept'); notify(`${offer.persona} accepted. Review it in the Deal Tray.`); } catch (error) { notify(error instanceof Error ? error.message : 'Could not accept offer.'); } };
-  const approveDeal = (id: string) => { markApproval(id); if (approve(id)) notify('Deal approved — inventory updated.'); else notify('Approval window expired. Try again.'); };
-  const selectTool = (name: string) => { setSelectedTool(name); const offer = openOffers[0]; const deal = pending[0]; const sample: Record<string, unknown> = { get_inventory: {}, get_offers: {}, get_analytics: {}, get_negotiation_log: {}, set_price: { item_id: inventory[0]?.id, price: inventory[0]?.ask, reason: 'Inspector sample' }, create_bundle: { item_ids: inventory.slice(0, 2).map((item) => item.id), discount_percent: 15 }, respond_to_offer: { offer_id: offer?.id ?? 'off_example', action: 'counter', counter_amount: offer?.amount ? offer.amount + 10 : 100 }, send_message: { persona: 'Bundle Bella', message: 'Can you improve the bundle?' }, approve_pending_deal: { deal_id: deal?.id ?? 'deal_example' } }; setToolInput(JSON.stringify(sample[name] ?? {}, null, 2)); setToolResult(''); };
-  const executeTool = async () => { if (!document.modelContext || !selectedTool) return; const tool = tools.find((item) => item.name === selectedTool); if (!tool) return; let input: object; try { input = JSON.parse(toolInput) as object; } catch { setToolResult('Invalid JSON. Use an object such as {} or the sample payload.'); return; } try { setToolResult(await document.modelContext.executeTool(tool, input)); } catch (firstError) { try { setToolResult(await document.modelContext.executeTool(tool, JSON.stringify(input))); } catch (secondError) { setToolResult(secondError instanceof Error ? secondError.message : firstError instanceof Error ? firstError.message : String(secondError)); } } };
+  const savePrice = (id: string) => {
+    const amount = Number(priceInput);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      notify('Enter a price greater than $0.');
+      return;
+    }
+    try {
+      setItemPrice(id, amount);
+      setPriceId(undefined);
+      notify('Listing price updated.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not update price.');
+    }
+  };
+  const counterOffer = (offer: Offer) => {
+    const amount = Number(counter[offer.id]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      notify('Enter a valid counter amount.');
+      return;
+    }
+    try {
+      respond(offer.id, 'counter', amount);
+      notify(`Counter sent to ${offer.persona}.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Counter failed.');
+    }
+  };
+  const acceptOffer = (offer: Offer) => {
+    try {
+      respond(offer.id, 'accept');
+      notify(`${offer.persona} accepted. Review it in the Deal Tray.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not accept offer.');
+    }
+  };
+  const approveDeal = (id: string) => {
+    markApproval(id);
+    if (approve(id)) notify('Deal approved — inventory updated.');
+    else notify('Approval window expired. Try again.');
+  };
+  const selectTool = (name: string) => {
+    setSelectedTool(name);
+    const offer = openOffers[0];
+    const deal = pending[0];
+    const sample: Record<string, unknown> = {
+      get_inventory: {},
+      get_offers: {},
+      get_analytics: {},
+      get_negotiation_log: {},
+      set_price: {
+        item_id: inventory[0]?.id,
+        price: inventory[0]?.ask,
+        reason: 'Inspector sample',
+      },
+      create_bundle: {
+        item_ids: inventory.slice(0, 2).map((item) => item.id),
+        discount_percent: 15,
+      },
+      respond_to_offer: {
+        offer_id: offer?.id ?? 'off_example',
+        action: 'counter',
+        counter_amount: offer?.amount ? offer.amount + 10 : 100,
+      },
+      send_message: { persona: 'Bundle Bella', message: 'Can you improve the bundle?' },
+      approve_pending_deal: { deal_id: deal?.id ?? 'deal_example' },
+    };
+    setToolInput(JSON.stringify(sample[name] ?? {}, null, 2));
+    setToolResult('');
+  };
+  const executeTool = async () => {
+    if (!document.modelContext || !selectedTool) return;
+    const tool = tools.find((item) => item.name === selectedTool);
+    if (!tool) return;
+    let input: object;
+    try {
+      input = JSON.parse(toolInput) as object;
+    } catch {
+      setToolResult('Invalid JSON. Use an object such as {} or the sample payload.');
+      return;
+    }
+    try {
+      setToolResult(await document.modelContext.executeTool(tool, input));
+    } catch (firstError) {
+      try {
+        setToolResult(await document.modelContext.executeTool(tool, JSON.stringify(input)));
+      } catch (secondError) {
+        setToolResult(
+          secondError instanceof Error
+            ? secondError.message
+            : firstError instanceof Error
+              ? firstError.message
+              : String(secondError),
+        );
+      }
+    }
+  };
 
-  return <div className="min-h-screen px-4 py-5 md:px-7 md:py-7">
-    <header className="mx-auto mb-5 flex max-w-[1580px] flex-wrap items-end justify-between gap-5">
-      <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.28em] text-cyan-300/80">Agent-powered resale desk</p><div className="flex items-center gap-3"><div className="pulse-glow flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/30 bg-cyan-400/10 text-xl">⌁</div><h1 className="text-4xl font-black tracking-[-.06em] text-slate-100 sm:text-5xl">barg<span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-fuchsia-400 bg-clip-text text-transparent">ai</span>ner</h1></div><p className="mt-2 text-sm text-slate-400">Your agent negotiates. You keep the final say.</p><p className="mt-2 text-xs font-semibold text-amber-300">{pending.length ? `Action required · ${pending.length} deal${pending.length > 1 ? 's' : ''}` : flashLabel || 'Agent watching'}</p></div>
-      <div className="flex flex-wrap items-center justify-end gap-2"><div className="glass rounded-2xl px-4 py-2.5"><p className="text-[10px] uppercase tracking-widest text-slate-500">Simulated monthly lift</p><p className="text-xl font-black text-emerald-300">{money(analytics.projectedMonthly)}</p></div><span className={`rounded-full border px-3 py-2 text-xs font-semibold ${ready ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-slate-700 bg-slate-900/80 text-slate-400'}`}>{ready ? '● WebMCP connected' : '○ Local fallback'}</span><button aria-label="Open tool inspector" onClick={() => setInspector(true)} className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:border-cyan-200">Inspect tools ↗</button></div>
-    </header>
-    {!available && <div className="glass mx-auto mb-5 flex max-w-[1580px] items-center gap-3 rounded-2xl border-amber-400/25 bg-amber-400/5 px-4 py-3 text-sm text-amber-100"><span className="text-lg">◌</span><p>WebMCP is in fallback mode. Open this page in ChatGPT’s browser or enable <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs">chrome://flags/#enable-webmcp-testing</code> to let an agent drive your desk.</p></div>}
-    <div className="mx-auto mb-5 grid max-w-[1580px] grid-cols-2 gap-3 md:grid-cols-4"><Metric label="Active listings" value={inventory.filter((item) => item.status === 'listed').length} detail="inventory ready" color="text-cyan-300" /><Metric label="Live offers" value={analytics.openOffers} detail="buyer agents active" color="text-fuchsia-300" /><Metric label="Needs your decision" value={pending.length} detail="human approval queue" color="text-amber-300" /><Metric label="Win rate" value={`${analytics.dealsWon + analytics.dealsLost ? Math.round((analytics.dealsWon / (analytics.dealsWon + analytics.dealsLost)) * 100) : 0}%`} detail="simulated history" color="text-emerald-300" /></div>
-    <main className="mx-auto grid max-w-[1580px] gap-5 xl:grid-cols-[1.05fr_1.35fr_.9fr]">
-      <section className="glass rounded-3xl p-4 md:p-5"><PanelTitle eyebrow="SELLING FLOOR" title="Inventory" count={`${filteredInventory.length} shown`} /><div className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]"><input aria-label="Search inventory" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search listings..." className="rounded-xl border border-slate-700/70 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600"/><select aria-label="Filter category" value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-xl border border-slate-700/70 bg-slate-950/60 px-3 py-2 text-xs text-slate-300">{categories.map((item) => <option key={item}>{item}</option>)}</select><select aria-label="Sort inventory" value={sort} onChange={(event) => setSort(event.target.value)} className="rounded-xl border border-slate-700/70 bg-slate-950/60 px-3 py-2 text-xs text-slate-300"><option value="priority">Priority</option><option value="price-high">Price high</option><option value="price-low">Price low</option></select></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">{filteredInventory.map((item) => { const offerCount = offers.filter((offer) => offer.items.includes(item.id) && (offer.status === 'open' || offer.status === 'countered')).length; return <article key={item.id} className="group rounded-2xl border border-slate-700/50 bg-slate-950/45 p-3 hover:border-cyan-300/30"><div className={`relative mb-3 flex h-24 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br ${item.color} text-5xl`}><span className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />{item.emoji}<span className="absolute bottom-2 left-2 rounded-md bg-black/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white/80">{item.category}</span></div><div className="flex items-start justify-between gap-2"><div><h3 className="text-sm font-bold text-slate-100">{item.title}</h3><p className="mt-1 text-[11px] text-slate-500">{item.condition} · {offerCount ? `${offerCount} active offer${offerCount > 1 ? 's' : ''}` : 'No active offers'}</p></div><span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${item.status === 'sold' ? 'bg-emerald-400/10 text-emerald-300' : 'bg-cyan-400/10 text-cyan-200'}`}>{item.status}</span></div><div className="mt-3 flex items-center justify-between"><span className="text-lg font-black text-white">{money(item.ask)}</span>{priceId === item.id ? <div className="flex gap-1"><input autoFocus aria-label="New price" value={priceInput} onChange={(event) => setPriceInput(event.target.value)} className="w-20 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs"/><button onClick={() => savePrice(item.id)} className="rounded-lg bg-cyan-300 px-2 py-1 text-xs font-bold text-slate-950">Save</button></div> : <button onClick={() => { setPriceId(item.id); setPriceInput(String(item.ask)); }} className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-cyan-300 hover:text-cyan-200">Edit price</button>}</div></article>; })}</div></section>
-      <section className="glass rounded-3xl p-4 md:p-5"><div className="mb-4 flex items-start justify-between"><PanelTitle eyebrow="AGENT ACTIVITY" title="Negotiation room" count={openOffers ? `${openOffers.length} live` : 'Quiet'} /><div className="flex items-center gap-1 rounded-lg border border-slate-700/70 p-1">{['all', 'offer', 'deal'].map((filter) => <button key={filter} onClick={() => setFeedFilter(filter)} className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase ${feedFilter === filter ? 'bg-cyan-300/15 text-cyan-200' : 'text-slate-500'}`}>{filter}</button>)}</div></div><div className="max-h-[480px] space-y-2.5 overflow-y-auto pr-1">{visibleFeed.length ? visibleFeed.map((event) => <div key={event.id} className="animate-rise rounded-2xl border border-slate-800/80 bg-slate-950/35 p-3"><div className="flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-lg">{event.persona ? personaMeta[event.persona]?.emoji : '⌁'}</div><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><span className={`text-xs font-bold ${event.persona ? personaMeta[event.persona]?.color : 'text-slate-400'}`}>{event.persona || 'Bargainer system'}</span><time className="text-[10px] text-slate-600">{new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div><p className="mt-1 text-sm leading-relaxed text-slate-300">{event.text}</p>{event.offerId && offers.find((offer) => offer.id === event.offerId)?.status === 'open' && <OfferActions offer={offers.find((offer) => offer.id === event.offerId)!} counter={counter[event.offerId] || ''} setCounter={(value) => setCounter({ ...counter, [event.offerId!]: value })} accept={acceptOffer} counterOffer={counterOffer} respond={respond} nowTick={nowTick} />}</div></div></div>) : <EmptyState icon="◌" text="No activity in this view yet." tip={'Ask your agent: “counter Bundle Bella at 8% off”'} />}</div></section>
-      <aside className="space-y-5"><section className={`glass rounded-3xl p-4 md:p-5 ${pending.length ? 'border-amber-300/35 shadow-[0_0_45px_rgba(251,191,36,.08)]' : ''}`}><div className="mb-4 flex items-start justify-between"><PanelTitle eyebrow="HUMAN GATE" title="Decision tray" count={`${pending.length} pending`} /><span className="rounded-full bg-amber-300/10 px-2 py-1 text-[10px] font-bold uppercase text-amber-200">Action required</span></div>{pending.length ? pending.map((deal) => <div key={deal.id} className="mb-3 rounded-2xl border border-amber-300/25 bg-amber-300/5 p-3"><div className="flex items-start justify-between"><div><p className="font-bold text-slate-100">{deal.persona}</p><p className="mt-1 text-xs text-slate-500">{deal.itemIds.length} item{deal.itemIds.length > 1 ? 's' : ''} · approval token valid 60 sec</p></div><b className="text-lg text-emerald-300">{money(deal.amount)}</b></div><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => approveDeal(deal.id)} className="rounded-xl bg-emerald-300 py-2.5 text-xs font-black text-slate-950 hover:bg-emerald-200">Approve deal</button><button onClick={() => { reject(deal.id); notify('Deal rejected.'); }} className="rounded-xl border border-slate-700 py-2.5 text-xs font-semibold text-slate-300 hover:border-rose-300/50 hover:text-rose-200">Reject</button></div></div>) : <EmptyState icon="✓" text="No deals waiting. Your agent is watching." />}<label className="mt-4 flex cursor-pointer items-center justify-between border-t border-slate-800 pt-4 text-xs text-slate-400">Auto-approve under $100 <input type="checkbox" checked={autoApprove} onChange={(event) => setAutoApprove(event.target.checked)} className="h-4 w-4 accent-cyan-300" /></label><p className="mt-2 text-[10px] text-slate-600">Human approval remains required for every deal in this demo.</p></section><section className="glass rounded-3xl p-4 md:p-5"><PanelTitle eyebrow="MARKET SIGNAL" title="Pulse" count="live" /><div className="mt-4 grid grid-cols-2 gap-2"><Stat label="Open offers" value={analytics.openOffers} /><Stat label="Deals won" value={analytics.dealsWon} /><Stat label="Deals lost" value={analytics.dealsLost} /><Stat label="Avg accepted" value={money(analytics.avgDiscount)} /></div></section></aside>
-    </main>
-    {notice && <div role="status" className="fixed bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-full border border-cyan-300/30 bg-slate-900/95 px-4 py-2.5 text-xs font-semibold text-cyan-100 shadow-2xl">{notice}</div>}
-    {inspector && <div className="fixed inset-0 z-20 bg-slate-950/60 backdrop-blur-sm" onClick={() => setInspector(false)}><aside role="dialog" aria-label="Tool Inspector" aria-modal="true" onClick={(event) => event.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-slate-700 bg-[#080d1b] p-5 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[.25em] text-cyan-300">WebMCP proof surface</p><h2 className="mt-1 text-2xl font-black">Tool Inspector</h2><p className="mt-1 text-xs text-slate-500">Discover, edit, and execute registered tools.</p></div><button aria-label="Close tool inspector" onClick={() => setInspector(false)} className="rounded-lg border border-slate-700 px-2 py-1 text-slate-400 hover:text-white">✕</button></div>{!tools.length ? <p className="mt-8 rounded-xl border border-dashed border-slate-700 p-4 text-sm text-slate-500">WebMCP is unavailable. Enable the testing flag to inspect registered tools.</p> : <div className="mt-5 grid gap-4 md:grid-cols-[.9fr_1.1fr]"><div className="space-y-2">{tools.map((tool) => <button key={tool.name} onClick={() => selectTool(tool.name)} className={`w-full rounded-xl border p-3 text-left ${selectedTool === tool.name ? 'border-cyan-300/60 bg-cyan-300/10' : 'border-slate-800 bg-slate-950/50 hover:border-slate-600'}`}><p className="font-mono text-xs text-cyan-200">{tool.name}</p><p className="mt-1 line-clamp-2 text-[10px] text-slate-500">{tool.description}</p></button>)}</div><div><p className="mb-2 text-xs font-bold text-slate-300">JSON input</p><textarea aria-label="Tool JSON input" value={toolInput} onChange={(event) => setToolInput(event.target.value)} className="h-44 w-full rounded-xl border border-slate-700 bg-black/30 p-3 font-mono text-xs text-cyan-100"/><button disabled={!selectedTool} onClick={executeTool} className="mt-2 w-full rounded-xl bg-cyan-300 py-2.5 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Execute {selectedTool || 'tool'}</button>{toolResult && <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-emerald-300/20 bg-emerald-300/5 p-3 text-[10px] text-emerald-200">{toolResult}</pre>}</div></div>}</aside></div>}
-  </div>;
+  return (
+    <div className="min-h-screen px-4 py-5 md:px-7 md:py-7">
+      <header className="mx-auto mb-5 flex max-w-[1580px] flex-wrap items-end justify-between gap-5">
+        <div>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[.28em] text-cyan-300/80">
+            Agent-powered resale desk
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="pulse-glow flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-300/30 bg-cyan-400/10 text-xl">
+              ⌁
+            </div>
+            <h1 className="text-4xl font-black tracking-[-.06em] text-slate-100 sm:text-5xl">
+              barg
+              <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-fuchsia-400 bg-clip-text text-transparent">
+                ai
+              </span>
+              ner
+            </h1>
+          </div>
+          <p className="mt-2 text-sm text-slate-400">
+            Your agent negotiates. You keep the final say.
+          </p>
+          <p className="mt-2 text-xs font-semibold text-amber-300">
+            {pending.length
+              ? `Action required · ${pending.length} deal${pending.length > 1 ? 's' : ''}`
+              : flashLabel || 'Agent watching'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="glass rounded-2xl px-4 py-2.5">
+            <p className="text-[10px] uppercase tracking-widest text-slate-500">
+              Simulated monthly lift
+            </p>
+            <p className="text-xl font-black text-emerald-300">
+              {money(analytics.projectedMonthly)}
+            </p>
+          </div>
+          <span
+            className={`rounded-full border px-3 py-2 text-xs font-semibold ${ready ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-slate-700 bg-slate-900/80 text-slate-400'}`}
+          >
+            {ready ? '● WebMCP connected' : '○ Local fallback'}
+          </span>
+          <button
+            aria-label="Open tool inspector"
+            onClick={() => setInspector(true)}
+            className="rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:border-cyan-200"
+          >
+            Inspect tools ↗
+          </button>
+        </div>
+      </header>
+      {!available && (
+        <div className="glass mx-auto mb-5 flex max-w-[1580px] items-center gap-3 rounded-2xl border-amber-400/25 bg-amber-400/5 px-4 py-3 text-sm text-amber-100">
+          <span className="text-lg">◌</span>
+          <p>
+            WebMCP is in fallback mode. Open this page in ChatGPT’s browser or enable{' '}
+            <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs">
+              chrome://flags/#enable-webmcp-testing
+            </code>{' '}
+            to let an agent drive your desk.
+          </p>
+        </div>
+      )}
+      <div className="mx-auto mb-5 grid max-w-[1580px] grid-cols-2 gap-3 md:grid-cols-4">
+        <Metric
+          label="Active listings"
+          value={inventory.filter((item) => item.status === 'listed').length}
+          detail="inventory ready"
+          color="text-cyan-300"
+        />
+        <Metric
+          label="Live offers"
+          value={analytics.openOffers}
+          detail="buyer agents active"
+          color="text-fuchsia-300"
+        />
+        <Metric
+          label="Needs your decision"
+          value={pending.length}
+          detail="human approval queue"
+          color="text-amber-300"
+        />
+        <Metric
+          label="Win rate"
+          value={`${analytics.dealsWon + analytics.dealsLost ? Math.round((analytics.dealsWon / (analytics.dealsWon + analytics.dealsLost)) * 100) : 0}%`}
+          detail="simulated history"
+          color="text-emerald-300"
+        />
+      </div>
+      <main className="mx-auto grid max-w-[1580px] gap-5 xl:grid-cols-[1.05fr_1.35fr_.9fr]">
+        <section className="glass rounded-3xl p-4 md:p-5">
+          <PanelTitle
+            eyebrow="SELLING FLOOR"
+            title="Inventory"
+            count={`${filteredInventory.length} shown`}
+          />
+          <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <input
+              aria-label="Search inventory"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search listings..."
+              className="rounded-xl border border-slate-700/70 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600"
+            />
+            <select
+              aria-label="Filter category"
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              className="rounded-xl border border-slate-700/70 bg-slate-950/60 px-3 py-2 text-xs text-slate-300"
+            >
+              {categories.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+            <select
+              aria-label="Sort inventory"
+              value={sort}
+              onChange={(event) => setSort(event.target.value)}
+              className="rounded-xl border border-slate-700/70 bg-slate-950/60 px-3 py-2 text-xs text-slate-300"
+            >
+              <option value="priority">Priority</option>
+              <option value="price-high">Price high</option>
+              <option value="price-low">Price low</option>
+            </select>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            {filteredInventory.map((item) => {
+              const offerCount = offers.filter(
+                (offer) =>
+                  offer.items.includes(item.id) &&
+                  (offer.status === 'open' || offer.status === 'countered'),
+              ).length;
+              return (
+                <article
+                  key={item.id}
+                  className="group rounded-2xl border border-slate-700/50 bg-slate-950/45 p-3 hover:border-cyan-300/30"
+                >
+                  <div
+                    className={`relative mb-3 flex h-24 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br ${item.color} text-5xl`}
+                  >
+                    <span className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                    {item.emoji}
+                    <span className="absolute bottom-2 left-2 rounded-md bg-black/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white/80">
+                      {item.category}
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-100">{item.title}</h3>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {item.condition} ·{' '}
+                        {offerCount
+                          ? `${offerCount} active offer${offerCount > 1 ? 's' : ''}`
+                          : 'No active offers'}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${item.status === 'sold' ? 'bg-emerald-400/10 text-emerald-300' : 'bg-cyan-400/10 text-cyan-200'}`}
+                    >
+                      {item.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-lg font-black text-white">{money(item.ask)}</span>
+                    {priceId === item.id ? (
+                      <div className="flex gap-1">
+                        <input
+                          autoFocus
+                          aria-label="New price"
+                          value={priceInput}
+                          onChange={(event) => setPriceInput(event.target.value)}
+                          className="w-20 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                        />
+                        <button
+                          onClick={() => savePrice(item.id)}
+                          className="rounded-lg bg-cyan-300 px-2 py-1 text-xs font-bold text-slate-950"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setPriceId(item.id);
+                          setPriceInput(String(item.ask));
+                        }}
+                        className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:border-cyan-300 hover:text-cyan-200"
+                      >
+                        Edit price
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+        <section className="glass rounded-3xl p-4 md:p-5">
+          <div className="mb-4 flex items-start justify-between">
+            <PanelTitle
+              eyebrow="AGENT ACTIVITY"
+              title="Negotiation room"
+              count={openOffers ? `${openOffers.length} live` : 'Quiet'}
+            />
+            <div className="flex items-center gap-1 rounded-lg border border-slate-700/70 p-1">
+              {['all', 'offer', 'deal'].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setFeedFilter(filter)}
+                  className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase ${feedFilter === filter ? 'bg-cyan-300/15 text-cyan-200' : 'text-slate-500'}`}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="max-h-[480px] space-y-2.5 overflow-y-auto pr-1">
+            {visibleFeed.length ? (
+              visibleFeed.map((event) => (
+                <div
+                  key={event.id}
+                  className="animate-rise rounded-2xl border border-slate-800/80 bg-slate-950/35 p-3"
+                >
+                  <div className="flex gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-lg">
+                      {event.persona ? personaMeta[event.persona]?.emoji : '⌁'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-xs font-bold ${event.persona ? personaMeta[event.persona]?.color : 'text-slate-400'}`}
+                        >
+                          {event.persona || 'Bargainer system'}
+                        </span>
+                        <time className="text-[10px] text-slate-600">
+                          {new Date(event.timestamp).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </time>
+                      </div>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-300">{event.text}</p>
+                      {event.offerId &&
+                        offers.find((offer) => offer.id === event.offerId)?.status === 'open' && (
+                          <OfferActions
+                            offer={offers.find((offer) => offer.id === event.offerId)!}
+                            counter={counter[event.offerId] || ''}
+                            setCounter={(value) =>
+                              setCounter({ ...counter, [event.offerId!]: value })
+                            }
+                            accept={acceptOffer}
+                            counterOffer={counterOffer}
+                            respond={respond}
+                            nowTick={nowTick}
+                          />
+                        )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyState
+                icon="◌"
+                text="No activity in this view yet."
+                tip={'Ask your agent: “counter Bundle Bella at 8% off”'}
+              />
+            )}
+          </div>
+        </section>
+        <aside className="space-y-5">
+          <section
+            className={`glass rounded-3xl p-4 md:p-5 ${pending.length ? 'border-amber-300/35 shadow-[0_0_45px_rgba(251,191,36,.08)]' : ''}`}
+          >
+            <div className="mb-4 flex items-start justify-between">
+              <PanelTitle
+                eyebrow="HUMAN GATE"
+                title="Decision tray"
+                count={`${pending.length} pending`}
+              />
+              <span className="rounded-full bg-amber-300/10 px-2 py-1 text-[10px] font-bold uppercase text-amber-200">
+                Action required
+              </span>
+            </div>
+            {pending.length ? (
+              pending.map((deal) => (
+                <div
+                  key={deal.id}
+                  className="mb-3 rounded-2xl border border-amber-300/25 bg-amber-300/5 p-3"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-bold text-slate-100">{deal.persona}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {deal.itemIds.length} item{deal.itemIds.length > 1 ? 's' : ''} · approval
+                        token valid 60 sec
+                      </p>
+                    </div>
+                    <b className="text-lg text-emerald-300">{money(deal.amount)}</b>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => approveDeal(deal.id)}
+                      className="rounded-xl bg-emerald-300 py-2.5 text-xs font-black text-slate-950 hover:bg-emerald-200"
+                    >
+                      Approve deal
+                    </button>
+                    <button
+                      onClick={() => {
+                        reject(deal.id);
+                        notify('Deal rejected.');
+                      }}
+                      className="rounded-xl border border-slate-700 py-2.5 text-xs font-semibold text-slate-300 hover:border-rose-300/50 hover:text-rose-200"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyState icon="✓" text="No deals waiting. Your agent is watching." />
+            )}
+            <label className="mt-4 flex cursor-pointer items-center justify-between border-t border-slate-800 pt-4 text-xs text-slate-400">
+              Auto-approve under $100{' '}
+              <input
+                type="checkbox"
+                checked={autoApprove}
+                onChange={(event) => setAutoApprove(event.target.checked)}
+                className="h-4 w-4 accent-cyan-300"
+              />
+            </label>
+            <p className="mt-2 text-[10px] text-slate-600">
+              Human approval remains required for every deal in this demo.
+            </p>
+          </section>
+          <section className="glass rounded-3xl p-4 md:p-5">
+            <PanelTitle eyebrow="MARKET SIGNAL" title="Pulse" count="live" />
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <Stat label="Open offers" value={analytics.openOffers} />
+              <Stat label="Deals won" value={analytics.dealsWon} />
+              <Stat label="Deals lost" value={analytics.dealsLost} />
+              <Stat label="Avg accepted" value={money(analytics.avgDiscount)} />
+            </div>
+          </section>
+        </aside>
+      </main>
+      {notice && (
+        <div
+          role="status"
+          className="fixed bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-full border border-cyan-300/30 bg-slate-900/95 px-4 py-2.5 text-xs font-semibold text-cyan-100 shadow-2xl"
+        >
+          {notice}
+        </div>
+      )}
+      {inspector && (
+        <div
+          className="fixed inset-0 z-20 bg-slate-950/60 backdrop-blur-sm"
+          onClick={() => setInspector(false)}
+        >
+          <aside
+            role="dialog"
+            aria-label="Tool Inspector"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+            className="absolute inset-y-0 right-0 w-full max-w-xl overflow-y-auto border-l border-slate-700 bg-[#080d1b] p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[.25em] text-cyan-300">
+                  WebMCP proof surface
+                </p>
+                <h2 className="mt-1 text-2xl font-black">Tool Inspector</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Discover, edit, and execute registered tools.
+                </p>
+              </div>
+              <button
+                aria-label="Close tool inspector"
+                onClick={() => setInspector(false)}
+                className="rounded-lg border border-slate-700 px-2 py-1 text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            {!tools.length ? (
+              <p className="mt-8 rounded-xl border border-dashed border-slate-700 p-4 text-sm text-slate-500">
+                WebMCP is unavailable. Enable the testing flag to inspect registered tools.
+              </p>
+            ) : (
+              <div className="mt-5 grid gap-4 md:grid-cols-[.9fr_1.1fr]">
+                <div className="space-y-2">
+                  {tools.map((tool) => (
+                    <button
+                      key={tool.name}
+                      onClick={() => selectTool(tool.name)}
+                      className={`w-full rounded-xl border p-3 text-left ${selectedTool === tool.name ? 'border-cyan-300/60 bg-cyan-300/10' : 'border-slate-800 bg-slate-950/50 hover:border-slate-600'}`}
+                    >
+                      <p className="font-mono text-xs text-cyan-200">{tool.name}</p>
+                      <p className="mt-1 line-clamp-2 text-[10px] text-slate-500">
+                        {tool.description}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-bold text-slate-300">JSON input</p>
+                  <textarea
+                    aria-label="Tool JSON input"
+                    value={toolInput}
+                    onChange={(event) => setToolInput(event.target.value)}
+                    className="h-44 w-full rounded-xl border border-slate-700 bg-black/30 p-3 font-mono text-xs text-cyan-100"
+                  />
+                  <button
+                    disabled={!selectedTool}
+                    onClick={executeTool}
+                    className="mt-2 w-full rounded-xl bg-cyan-300 py-2.5 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Execute {selectedTool || 'tool'}
+                  </button>
+                  {toolResult && (
+                    <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-emerald-300/20 bg-emerald-300/5 p-3 text-[10px] text-emerald-200">
+                      {toolResult}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function PanelTitle({ eyebrow, title, count }: { eyebrow: string; title: string; count: string }) { return <div><p className="text-[10px] font-bold uppercase tracking-[.22em] text-slate-500">{eyebrow}</p><div className="mt-1 flex items-center gap-2"><h2 className="text-lg font-black tracking-tight text-slate-100">{title}</h2><span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">{count}</span></div></div>; }
-function Metric({ label, value, detail, color }: { label: string; value: string | number; detail: string; color: string }) { return <div className="glass rounded-2xl px-4 py-3"><p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p><p className={`mt-1 text-2xl font-black ${color}`}>{value}</p><p className="text-[10px] text-slate-600">{detail}</p></div>; }
-function Stat({ label, value }: { label: string; value: string | number }) { return <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><p className="text-lg font-black text-slate-100">{value}</p><p className="mt-1 text-[10px] text-slate-500">{label}</p></div>; }
-function EmptyState({ icon, text, tip }: { icon: string; text: string; tip?: string }) { return <div className="rounded-2xl border border-dashed border-slate-800 p-7 text-center text-sm text-slate-500"><span className="text-xl text-cyan-300">{icon}</span><p className="mt-2">{text}</p>{tip && <p className="mt-3 text-xs text-slate-600">{tip}</p>}</div>; }
-function OfferActions({ offer, counter, setCounter, accept, counterOffer, respond, nowTick }: { offer: Offer; counter: string; setCounter: (value: string) => void; accept: (offer: Offer) => void; counterOffer: (offer: Offer) => void; respond: (id: string, action: 'accept' | 'reject' | 'counter', amount?: number) => Offer | undefined; nowTick: number }) { const seconds = offer.expiresAt ? Math.max(0, Math.ceil((offer.expiresAt - nowTick) / 1000)) : 0; const countdown = offer.expiresAt ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : ''; return <div className="mt-3 flex flex-wrap items-center gap-2"><span className="rounded-lg bg-emerald-300/10 px-2 py-1 text-xs font-bold text-emerald-300">Offer {money(offer.amount)}</span>{offer.expiresAt && <span className={`rounded-lg px-2 py-1 text-xs font-bold ${seconds <= 20 ? 'bg-rose-400/15 text-rose-300' : 'bg-amber-400/15 text-amber-200'}`}>⚡ expires {countdown}</span>}<button onClick={() => accept(offer)} className="rounded-lg bg-emerald-300 px-2.5 py-1.5 text-xs font-bold text-slate-950">Accept</button><input aria-label={`Counter ${offer.persona}`} value={counter} onChange={(event) => setCounter(event.target.value)} placeholder="$ counter" className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs"/><button onClick={() => counterOffer(offer)} className="rounded-lg border border-fuchsia-300/40 px-2.5 py-1.5 text-xs text-fuchsia-200">Counter</button><button onClick={() => respond(offer.id, 'reject')} className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-500 hover:text-rose-200">Decline</button></div>; }
+function PanelTitle({ eyebrow, title, count }: { eyebrow: string; title: string; count: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-[.22em] text-slate-500">{eyebrow}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <h2 className="text-lg font-black tracking-tight text-slate-100">{title}</h2>
+        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">
+          {count}
+        </span>
+      </div>
+    </div>
+  );
+}
+function Metric({
+  label,
+  value,
+  detail,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  color: string;
+}) {
+  return (
+    <div className="glass rounded-2xl px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
+      <p className={`mt-1 text-2xl font-black ${color}`}>{value}</p>
+      <p className="text-[10px] text-slate-600">{detail}</p>
+    </div>
+  );
+}
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+      <p className="text-lg font-black text-slate-100">{value}</p>
+      <p className="mt-1 text-[10px] text-slate-500">{label}</p>
+    </div>
+  );
+}
+function EmptyState({ icon, text, tip }: { icon: string; text: string; tip?: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-slate-800 p-7 text-center text-sm text-slate-500">
+      <span className="text-xl text-cyan-300">{icon}</span>
+      <p className="mt-2">{text}</p>
+      {tip && <p className="mt-3 text-xs text-slate-600">{tip}</p>}
+    </div>
+  );
+}
+function OfferActions({
+  offer,
+  counter,
+  setCounter,
+  accept,
+  counterOffer,
+  respond,
+  nowTick,
+}: {
+  offer: Offer;
+  counter: string;
+  setCounter: (value: string) => void;
+  accept: (offer: Offer) => void;
+  counterOffer: (offer: Offer) => void;
+  respond: (
+    id: string,
+    action: 'accept' | 'reject' | 'counter',
+    amount?: number,
+  ) => Offer | undefined;
+  nowTick: number;
+}) {
+  const seconds = offer.expiresAt ? Math.max(0, Math.ceil((offer.expiresAt - nowTick) / 1000)) : 0;
+  const countdown = offer.expiresAt
+    ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+    : '';
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <span className="rounded-lg bg-emerald-300/10 px-2 py-1 text-xs font-bold text-emerald-300">
+        Offer {money(offer.amount)}
+      </span>
+      {offer.expiresAt && (
+        <span
+          className={`rounded-lg px-2 py-1 text-xs font-bold ${seconds <= 20 ? 'bg-rose-400/15 text-rose-300' : 'bg-amber-400/15 text-amber-200'}`}
+        >
+          ⚡ expires {countdown}
+        </span>
+      )}
+      <button
+        onClick={() => accept(offer)}
+        className="rounded-lg bg-emerald-300 px-2.5 py-1.5 text-xs font-bold text-slate-950"
+      >
+        Accept
+      </button>
+      <input
+        aria-label={`Counter ${offer.persona}`}
+        value={counter}
+        onChange={(event) => setCounter(event.target.value)}
+        placeholder="$ counter"
+        className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs"
+      />
+      <button
+        onClick={() => counterOffer(offer)}
+        className="rounded-lg border border-fuchsia-300/40 px-2.5 py-1.5 text-xs text-fuchsia-200"
+      >
+        Counter
+      </button>
+      <button
+        onClick={() => respond(offer.id, 'reject')}
+        className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-500 hover:text-rose-200"
+      >
+        Decline
+      </button>
+    </div>
+  );
+}
 export default App;

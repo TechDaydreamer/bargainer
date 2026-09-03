@@ -4,23 +4,234 @@ import type { Analytics, Bundle, FeedEvent, Item, Offer, PendingDeal } from '../
 
 const now = () => Date.now();
 const STORAGE_KEY = 'bargainer-state-v1';
-interface BargainerState { inventory: Item[]; offers: Offer[]; feed: FeedEvent[]; pendingDeals: PendingDeal[]; bundles: Bundle[]; autoApprove: boolean; autoApproveLimit: number; humanApprovalToken?: { dealId: string; timestamp: number }; setItemPrice: (id: string, price: number, reason?: string) => Item | undefined; createBundle: (ids: string[], discount: number) => Bundle; addOffer: (offer: Offer) => void; respond: (id: string, action: 'accept' | 'reject' | 'counter', amount?: number) => Offer | undefined; addMessage: (persona: string, text: string) => void; addLog: (text: string, type?: FeedEvent['type'], persona?: string, offerId?: string, amount?: number) => void; approveDeal: (id: string) => boolean; rejectDeal: (id: string) => void; markHumanApproval: (id: string) => void; setAutoApprove: (value: boolean) => void; analytics: () => Analytics; }
+interface BargainerState {
+  inventory: Item[];
+  offers: Offer[];
+  feed: FeedEvent[];
+  pendingDeals: PendingDeal[];
+  bundles: Bundle[];
+  autoApprove: boolean;
+  autoApproveLimit: number;
+  humanApprovalToken?: { dealId: string; timestamp: number };
+  setItemPrice: (id: string, price: number, reason?: string) => Item | undefined;
+  createBundle: (ids: string[], discount: number) => Bundle;
+  addOffer: (offer: Offer) => void;
+  respond: (
+    id: string,
+    action: 'accept' | 'reject' | 'counter',
+    amount?: number,
+  ) => Offer | undefined;
+  addMessage: (persona: string, text: string) => void;
+  addLog: (
+    text: string,
+    type?: FeedEvent['type'],
+    persona?: string,
+    offerId?: string,
+    amount?: number,
+  ) => void;
+  approveDeal: (id: string) => boolean;
+  rejectDeal: (id: string) => void;
+  markHumanApproval: (id: string) => void;
+  setAutoApprove: (value: boolean) => void;
+  analytics: () => Analytics;
+}
 
-const initial = (() => { try { const saved = localStorage.getItem(STORAGE_KEY); if (saved) return JSON.parse(saved) as Pick<BargainerState, 'inventory' | 'offers' | 'feed' | 'pendingDeals' | 'bundles' | 'autoApprove'>; } catch { /* use clean demo state */ } return { inventory: seedInventory, offers: [], feed: [{ id: 'welcome', type: 'system' as const, text: 'Your agent is online. Buyer agents are scanning the desk.', timestamp: now() }], pendingDeals: [], bundles: [], autoApprove: false }; })();
+const initial = (() => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved)
+      return JSON.parse(saved) as Pick<
+        BargainerState,
+        'inventory' | 'offers' | 'feed' | 'pendingDeals' | 'bundles' | 'autoApprove'
+      >;
+  } catch {
+    /* use clean demo state */
+  }
+  return {
+    inventory: seedInventory,
+    offers: [],
+    feed: [
+      {
+        id: 'welcome',
+        type: 'system' as const,
+        text: 'Your agent is online. Buyer agents are scanning the desk.',
+        timestamp: now(),
+      },
+    ],
+    pendingDeals: [],
+    bundles: [],
+    autoApprove: false,
+  };
+})();
 
 export const useStore = create<BargainerState>((set, get) => ({
-  ...initial, autoApproveLimit: 100,
-  addLog: (text, type = 'system', persona, offerId, amount) => set((s) => ({ feed: [...s.feed, { id: crypto.randomUUID(), type, text, persona, offerId, amount, timestamp: now() }].slice(-100) })),
-  setItemPrice: (id, price, reason) => { if (!Number.isFinite(price) || price <= 0) throw new Error('Price must be greater than $0'); const item = get().inventory.find((entry) => entry.id === id); if (!item) return undefined; const rounded = Math.round(price); set((s) => ({ inventory: s.inventory.map((entry) => entry.id === id ? { ...entry, ask: rounded } : entry) })); get().addLog(`🤖 Agent repriced ${item.title} → $${rounded}${reason ? ` · ${reason}` : ''}`); return { ...item, ask: rounded }; },
-  createBundle: (ids, discount) => { if (ids.length < 2) throw new Error('A bundle needs at least 2 items'); if (!Number.isFinite(discount) || discount < 1 || discount > 70) throw new Error('Discount must be between 1 and 70 percent'); const items = get().inventory.filter((item) => ids.includes(item.id)); if (items.length !== ids.length) throw new Error('Unknown item id'); const bundle = { id: `bun_${Date.now()}`, itemIds: ids, discountPercent: discount, price: Math.round(items.reduce((total, item) => total + item.ask, 0) * (1 - discount / 100)) }; set((s) => ({ bundles: [...s.bundles, bundle] })); get().addLog(`📦 Agent created a ${discount}% bundle: ${items.map((item) => item.title).join(' + ')}`); return bundle; },
-  addOffer: (offer) => { set((s) => ({ offers: [...s.offers.filter((entry) => entry.id !== offer.id), offer] })); get().addLog(`${offer.persona} opened an offer for $${offer.amount}`, 'offer', offer.persona, offer.id, offer.amount); },
-  respond: (id, action, amount) => { const offer = get().offers.find((entry) => entry.id === id); if (!offer) throw new Error(`Unknown offer_id: ${id}`); if (offer.status !== 'open' && offer.status !== 'countered') throw new Error('Offer is no longer open'); if (action === 'counter' && (!Number.isFinite(amount) || (amount ?? 0) <= 0)) throw new Error('Counter amount must be greater than $0'); const next: Offer = { ...offer, status: action === 'accept' ? 'accepted' : action === 'reject' ? 'rejected' : 'countered', state: action === 'accept' ? 'pending_approval' : action === 'reject' ? 'rejected' : 'countered', amount: action === 'counter' ? amount! : offer.amount, round: action === 'counter' ? offer.round + 1 : offer.round }; set((s) => ({ offers: s.offers.map((entry) => entry.id === id ? next : entry) })); if (action === 'accept') { const deal = { id: `deal_${Date.now()}`, offerId: id, persona: offer.persona, itemIds: offer.items, amount: offer.amount, createdAt: now() }; set((s) => ({ pendingDeals: [...s.pendingDeals, deal] })); get().addLog(`✅ ${offer.persona} accepted — awaiting your approval for $${offer.amount}`, 'deal', offer.persona, id, offer.amount); } else get().addLog(action === 'reject' ? `🚶 You declined ${offer.persona}'s offer` : `↔️ Countered ${offer.persona} at $${amount}`, 'message', offer.persona, id, amount); return next; },
-  addMessage: (persona, text) => { get().addLog(`You: ${text}`, 'message', persona); get().addLog(`${persona}: ${persona === 'Lowball Larry' ? 'Blunt. I can sharpen that number.' : persona === 'Bundle Bella' ? 'Love the energy! Let me see what I can do.' : 'Clock is ticking — make me your best shot.'}`, 'message', persona); },
+  ...initial,
+  autoApproveLimit: 100,
+  addLog: (text, type = 'system', persona, offerId, amount) =>
+    set((s) => ({
+      feed: [
+        ...s.feed,
+        { id: crypto.randomUUID(), type, text, persona, offerId, amount, timestamp: now() },
+      ].slice(-100),
+    })),
+  setItemPrice: (id, price, reason) => {
+    if (!Number.isFinite(price) || price <= 0) throw new Error('Price must be greater than $0');
+    const item = get().inventory.find((entry) => entry.id === id);
+    if (!item) return undefined;
+    const rounded = Math.round(price);
+    set((s) => ({
+      inventory: s.inventory.map((entry) => (entry.id === id ? { ...entry, ask: rounded } : entry)),
+    }));
+    get().addLog(`🤖 Agent repriced ${item.title} → $${rounded}${reason ? ` · ${reason}` : ''}`);
+    return { ...item, ask: rounded };
+  },
+  createBundle: (ids, discount) => {
+    if (ids.length < 2) throw new Error('A bundle needs at least 2 items');
+    if (!Number.isFinite(discount) || discount < 1 || discount > 70)
+      throw new Error('Discount must be between 1 and 70 percent');
+    const items = get().inventory.filter((item) => ids.includes(item.id));
+    if (items.length !== ids.length) throw new Error('Unknown item id');
+    const bundle = {
+      id: `bun_${Date.now()}`,
+      itemIds: ids,
+      discountPercent: discount,
+      price: Math.round(items.reduce((total, item) => total + item.ask, 0) * (1 - discount / 100)),
+    };
+    set((s) => ({ bundles: [...s.bundles, bundle] }));
+    get().addLog(
+      `📦 Agent created a ${discount}% bundle: ${items.map((item) => item.title).join(' + ')}`,
+    );
+    return bundle;
+  },
+  addOffer: (offer) => {
+    set((s) => ({ offers: [...s.offers.filter((entry) => entry.id !== offer.id), offer] }));
+    get().addLog(
+      `${offer.persona} opened an offer for $${offer.amount}`,
+      'offer',
+      offer.persona,
+      offer.id,
+      offer.amount,
+    );
+  },
+  respond: (id, action, amount) => {
+    const offer = get().offers.find((entry) => entry.id === id);
+    if (!offer) throw new Error(`Unknown offer_id: ${id}`);
+    if (offer.status !== 'open' && offer.status !== 'countered')
+      throw new Error('Offer is no longer open');
+    if (action === 'counter' && (!Number.isFinite(amount) || (amount ?? 0) <= 0))
+      throw new Error('Counter amount must be greater than $0');
+    const next: Offer = {
+      ...offer,
+      status: action === 'accept' ? 'accepted' : action === 'reject' ? 'rejected' : 'countered',
+      state:
+        action === 'accept' ? 'pending_approval' : action === 'reject' ? 'rejected' : 'countered',
+      amount: action === 'counter' ? amount! : offer.amount,
+      round: action === 'counter' ? offer.round + 1 : offer.round,
+    };
+    set((s) => ({ offers: s.offers.map((entry) => (entry.id === id ? next : entry)) }));
+    if (action === 'accept') {
+      const deal = {
+        id: `deal_${Date.now()}`,
+        offerId: id,
+        persona: offer.persona,
+        itemIds: offer.items,
+        amount: offer.amount,
+        createdAt: now(),
+      };
+      set((s) => ({ pendingDeals: [...s.pendingDeals, deal] }));
+      get().addLog(
+        `✅ ${offer.persona} accepted — awaiting your approval for $${offer.amount}`,
+        'deal',
+        offer.persona,
+        id,
+        offer.amount,
+      );
+    } else
+      get().addLog(
+        action === 'reject'
+          ? `🚶 You declined ${offer.persona}'s offer`
+          : `↔️ Countered ${offer.persona} at $${amount}`,
+        'message',
+        offer.persona,
+        id,
+        amount,
+      );
+    return next;
+  },
+  addMessage: (persona, text) => {
+    get().addLog(`You: ${text}`, 'message', persona);
+    get().addLog(
+      `${persona}: ${persona === 'Lowball Larry' ? 'Blunt. I can sharpen that number.' : persona === 'Bundle Bella' ? 'Love the energy! Let me see what I can do.' : 'Clock is ticking — make me your best shot.'}`,
+      'message',
+      persona,
+    );
+  },
   markHumanApproval: (id) => set({ humanApprovalToken: { dealId: id, timestamp: now() } }),
-  approveDeal: (id) => { const token = get().humanApprovalToken; if (!token || token.dealId !== id || now() - token.timestamp > 60000) return false; const deal = get().pendingDeals.find((entry) => entry.id === id); if (!deal) return false; set((s) => ({ pendingDeals: s.pendingDeals.filter((entry) => entry.id !== id), humanApprovalToken: undefined, inventory: s.inventory.map((item) => deal.itemIds.includes(item.id) ? { ...item, status: 'sold' } : item) })); get().addLog(`🎉 Deal approved with ${deal.persona} · $${deal.amount}`, 'deal', deal.persona, deal.offerId, deal.amount); return true; },
-  rejectDeal: (id) => { const deal = get().pendingDeals.find((entry) => entry.id === id); set((s) => ({ pendingDeals: s.pendingDeals.filter((entry) => entry.id !== id) })); if (deal) get().addLog(`Deal with ${deal.persona} rejected by human`, 'deal', deal.persona); },
+  approveDeal: (id) => {
+    const token = get().humanApprovalToken;
+    if (!token || token.dealId !== id || now() - token.timestamp > 60000) return false;
+    const deal = get().pendingDeals.find((entry) => entry.id === id);
+    if (!deal) return false;
+    set((s) => ({
+      pendingDeals: s.pendingDeals.filter((entry) => entry.id !== id),
+      humanApprovalToken: undefined,
+      inventory: s.inventory.map((item) =>
+        deal.itemIds.includes(item.id) ? { ...item, status: 'sold' } : item,
+      ),
+    }));
+    get().addLog(
+      `🎉 Deal approved with ${deal.persona} · $${deal.amount}`,
+      'deal',
+      deal.persona,
+      deal.offerId,
+      deal.amount,
+    );
+    return true;
+  },
+  rejectDeal: (id) => {
+    const deal = get().pendingDeals.find((entry) => entry.id === id);
+    set((s) => ({ pendingDeals: s.pendingDeals.filter((entry) => entry.id !== id) }));
+    if (deal) get().addLog(`Deal with ${deal.persona} rejected by human`, 'deal', deal.persona);
+  },
   setAutoApprove: (value) => set({ autoApprove: value }),
-  analytics: () => { const s = get(); const accepted = s.offers.filter((offer) => offer.status === 'accepted'); const liveOffers = s.offers.filter((offer) => offer.status === 'open' || offer.status === 'countered'); const sold = s.inventory.filter((item) => item.status === 'sold').length; return { projectedMonthly: sold * 320 + liveOffers.length * 85, avgDiscount: Math.round(accepted.reduce((total, offer) => total + offer.amount, 0) / (accepted.length || 1)), openOffers: s.offers.filter((offer) => offer.status === 'open' || offer.status === 'countered').length, dealsWon: sold, dealsLost: s.offers.filter((offer) => offer.status === 'rejected' || offer.status === 'walked' || offer.status === 'expired').length, repriceCandidates: s.inventory.filter((item) => item.status === 'listed' && !s.offers.some((offer) => offer.items.includes(item.id))).map((item) => item.id) }; }
+  analytics: () => {
+    const s = get();
+    const accepted = s.offers.filter((offer) => offer.status === 'accepted');
+    const liveOffers = s.offers.filter(
+      (offer) => offer.status === 'open' || offer.status === 'countered',
+    );
+    const sold = s.inventory.filter((item) => item.status === 'sold').length;
+    return {
+      projectedMonthly: sold * 320 + liveOffers.length * 85,
+      avgDiscount: Math.round(
+        accepted.reduce((total, offer) => total + offer.amount, 0) / (accepted.length || 1),
+      ),
+      openOffers: s.offers.filter(
+        (offer) => offer.status === 'open' || offer.status === 'countered',
+      ).length,
+      dealsWon: sold,
+      dealsLost: s.offers.filter(
+        (offer) =>
+          offer.status === 'rejected' || offer.status === 'walked' || offer.status === 'expired',
+      ).length,
+      repriceCandidates: s.inventory
+        .filter(
+          (item) =>
+            item.status === 'listed' && !s.offers.some((offer) => offer.items.includes(item.id)),
+        )
+        .map((item) => item.id),
+    };
+  },
 }));
 
-useStore.subscribe((state) => { try { const { inventory, offers, feed, pendingDeals, bundles, autoApprove } = state; localStorage.setItem(STORAGE_KEY, JSON.stringify({ inventory, offers, feed, pendingDeals, bundles, autoApprove })); } catch { /* persistence is best effort */ } });
+useStore.subscribe((state) => {
+  try {
+    const { inventory, offers, feed, pendingDeals, bundles, autoApprove } = state;
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ inventory, offers, feed, pendingDeals, bundles, autoApprove }),
+    );
+  } catch {
+    /* persistence is best effort */
+  }
+});
